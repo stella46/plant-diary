@@ -21,7 +21,7 @@ var Sheets = (function () {
     title: 'メニュー',
     html: function () {
       var items = [['shop', 'ショップ', '種・どうぐ・場所'], ['bag', 'たねぶくろ', S().seeds.length + 'こ'], ['zukan', '図鑑', Sim.zCount() + '/' + D.SPECIES.length],
-        ['reqs', '依頼', S().reqs.length + '件'], ['diary', '日記', ''], ['trade', 'こうかん', 'コードで見せ合い'], ['rec', '記録', D.RANKS[Sim.rankIdx()][1]], ['conf', 'せってい', '']];
+        ['reqs', '依頼', S().reqs.length + '件'], ['diary', '日記', ''], ['trade', 'こうかん', 'コードで見せ合い'], ['rec', '記録', D.RANKS[Sim.rankIdx()][1]], ['fb', '感想・不具合', '文章にして共有'], ['conf', 'せってい', '']];
       return '<div class="grid">' + items.map(function (x) { return '<button class="bigbtn" data-a="go" data-v="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></button>'; }).join('') + '</div>' +
         '<p class="note">時間はこの画面をひらいているあいだ止まっているよ。ゆっくりどうぞ。</p>';
     },
@@ -259,6 +259,70 @@ var Sheets = (function () {
       return h + rows.map(function (r) { return '<div class="kv"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('');
     },
     on: function () {}
+  };
+
+  /* 感想・不具合(チェック+自由記入 → 文章にして、コピー・共有) */
+  var FB_GROUPS = [
+    ['good', 'よかったところ', ['3Dの見た目', 'BGM・音', '育てる楽しさ', 'かけあわせ', '図鑑', '5つの場所', '季節・天気', '依頼・庭のランク']],
+    ['bad', 'わかりにくい・不満', ['操作がわかりにくい', '説明が足りない', '字やボタンが小さい', 'テンポが遅い', 'コインのバランス', '成長の速さ', '何をすればいいかわからない']],
+    ['bug', '不具合', ['画面が止まる・進まない', 'ボタンが押せない', '数字がおかしい', '表示が崩れる・はみ出す', 'セーブがおかしい・消えた', '音がおかしい', '3Dが表示されない']],
+    ['want', 'ほしいもの', ['もっと植物', 'もっと場所', 'もっとかざり', '友達と見せ合えるもの', 'やりこみ要素', 'わかりやすい説明']]
+  ];
+  var FB_SCREENS = ['ホーム(3D画面)', 'ショップ', 'たねぶくろ・種まき', '図鑑', '依頼', 'こうかん', 'せってい'];
+  function fbGrab() {
+    FB_GROUPS.forEach(function (g) { var t = $('#fb_' + g[0]); if (t) st.t[g[0]] = t.value; });
+    ['other', 'name'].forEach(function (k) { var t = $('#fb_' + k); if (t) st[k] = t.value; });
+  }
+  function fbText() {
+    var L = ['【ぷらんと日記 感想】'];
+    if (st.name.trim()) L.push('名前:' + st.name.trim());
+    if (st.star) L.push('楽しさ:' + '★'.repeat(st.star) + '☆'.repeat(5 - st.star));
+    FB_GROUPS.forEach(function (g) {
+      var c = st.c[g[0]], t = (st.t[g[0]] || '').trim(), line = [];
+      if (c.length) line.push(c.join('、')); if (g[0] === 'bug' && st.scr.length) line.push('場所:' + st.scr.join('、')); if (t) line.push(t);
+      if (line.length) L.push('■' + g[1] + '\n' + line.join('\n'));
+    });
+    if (st.other.trim()) L.push('■そのほか\n' + st.other.trim());
+    if (st.info) L.push('(端末:画面' + window.innerWidth + 'x' + window.innerHeight + ' / ' + S().day + '日め)');
+    return L.join('\n');
+  }
+  function fbEmpty() { return !st.star && !st.other.trim() && FB_GROUPS.every(function (g) { return !st.c[g[0]].length && !(st.t[g[0]] || '').trim(); }); }
+  SH.fb = {
+    title: '感想・不具合',
+    init: function () { st = { star: 0, name: '', other: '', info: true, scr: [], c: { good: [], bad: [], bug: [], want: [] }, t: { good: '', bad: '', bug: '', want: '' }, out: '' }; },
+    html: function () {
+      if (st.out) {
+        return '<p>できあがり。コピーして、書いた内容を作者に送ったり、SNSやメモに貼ったりできます。</p><textarea id="fbout" readonly rows="10">' + esc(st.out) + '</textarea>' +
+          '<div class="btns end"><button class="btn ghost" data-a="back">直す</button>' + (navigator.share ? '<button class="btn ghost" data-a="share">共有</button>' : '') + '<button class="btn" data-a="copy">コピー</button></div>';
+      }
+      var h = '<p class="note small">全部書かなくて大丈夫。チェックを入れるだけでもOKです。名前やメールなど、個人がわかる情報は書かないでね。</p>';
+      h += '<h4>楽しさ(任意)</h4><div class="chips">' + [1, 2, 3, 4, 5].map(function (i) { return '<button class="chipb' + (st.star === i ? ' on' : '') + '" data-a="star" data-v="' + i + '">' + '★'.repeat(i) + '</button>'; }).join('') + '</div>';
+      FB_GROUPS.forEach(function (g) {
+        h += '<h4>' + g[1] + '</h4><div class="chips">' + g[2].map(function (x) { return '<button class="chipb' + (st.c[g[0]].indexOf(x) >= 0 ? ' on' : '') + '" data-a="chk" data-g="' + g[0] + '" data-v="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>';
+        if (g[0] === 'bug') h += '<p class="note small" style="margin-top:8px">起きた画面</p><div class="chips">' + FB_SCREENS.map(function (x) { return '<button class="chipb' + (st.scr.indexOf(x) >= 0 ? ' on' : '') + '" data-a="scr" data-v="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>';
+        h += '<textarea id="fb_' + g[0] + '" rows="2" maxlength="500" placeholder="自由に書いてね">' + esc(st.t[g[0]]) + '</textarea>';
+      });
+      h += '<h4>そのほか</h4><textarea id="fb_other" rows="2" maxlength="500">' + esc(st.other) + '</textarea>';
+      h += '<h4>名前(任意)</h4><input id="fb_name" maxlength="20" placeholder="ニックネームなど" value="' + esc(st.name) + '" style="width:100%;border:2px solid var(--line);border-radius:12px;padding:9px;font-size:14px;background:#fff;color:var(--ink)">';
+      h += '<div class="chips" style="margin-top:10px"><button class="chipb' + (st.info ? ' on' : '') + '" data-a="info">端末の画面サイズと遊んだ日数もそえる</button></div>';
+      return h + '<div class="btns end"><button class="btn" data-a="make">文章にする</button></div>';
+    },
+    on: function (a, el) {
+      if (a === 'copy') {
+        var ta = $('#fbout'); ta.focus(); ta.select();
+        var okc = false; try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(ta.value); okc = true; } else okc = document.execCommand('copy'); } catch (e) { try { okc = document.execCommand('copy'); } catch (e2) {} }
+        UI.toast(okc ? 'コピーしたよ' : '文字を長押ししてコピーしてね'); return;
+      }
+      if (a === 'share') { try { navigator.share({ title: 'ぷらんと日記 感想', text: st.out }).catch(function () {}); } catch (e) {} return; }
+      if (a === 'back') { st.out = ''; render(); return; }
+      fbGrab();
+      if (a === 'star') { var v = +el.dataset.v; st.star = st.star === v ? 0 : v; }
+      else if (a === 'chk') { var arr = st.c[el.dataset.g], i = arr.indexOf(el.dataset.v); if (i >= 0) arr.splice(i, 1); else arr.push(el.dataset.v); }
+      else if (a === 'scr') { var j = st.scr.indexOf(el.dataset.v); if (j >= 0) st.scr.splice(j, 1); else st.scr.push(el.dataset.v); }
+      else if (a === 'info') st.info = !st.info;
+      else if (a === 'make') { if (fbEmpty()) { UI.toast('どこか1つチェックするか書いてね', 'warn'); return; } st.out = fbText(); }
+      render();
+    }
   };
 
   /* せってい */
